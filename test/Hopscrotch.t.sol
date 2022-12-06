@@ -4,6 +4,7 @@ pragma solidity ^0.8.13;
 import "forge-std/Test.sol";
 // import "forge-std/StdCheats.sol";
 import "../src/Hopscotch.sol";
+import {IUniswapV3PoolActions} from "uniswap-v3-core/interfaces/pool/IUniswapV3PoolActions.sol";
 
 // forge test --fork-url http://localhost:8545 -vvvvv
 
@@ -11,7 +12,7 @@ contract HopscotchTest is Test {
     address public constant DAI = 0x6B175474E89094C44Da98b954EedeAC495271d0F;
     address public constant USDC = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48;
     address public constant UNISWAP_USDC_DAI_POOL =
-        0x6c6Bc977E13Df9b0de53b251522280BB72383700;
+        0x6c6Bc977E13Df9b0de53b251522280BB72383700; // DAI is token0
 
     uint8 public constant DAI_DECIMALS = 8;
     uint8 public constant USDC_DECIMALS = 18;
@@ -95,13 +96,38 @@ contract HopscotchTest is Test {
     }
 
     function testPayRequestSwap() public {
-        // uint256 requestAmount = 1 * 10**DAI_DECIMALS;
-        // vm.prank(acct1);
-        // uint256 id = hopscotch.createRequest(IERC20(DAI), requestAmount);
-        // vm.startPrank(acct2);
-        // vm.expectRevert();
-        // hopscotch.payRequest(id);
-        // (, , , bool paid) = hopscotch.getRequest(id);
-        // assertFalse(paid);
+        uint256 requestAmount = 1 * 10**DAI_DECIMALS;
+        uint256 inputAmount = 2 * 10**USDC_DECIMALS;
+
+        // Create request
+        vm.prank(acct1);
+        uint256 id = hopscotch.createRequest(IERC20(DAI), requestAmount);
+
+        vm.startPrank(acct2);
+
+        // Get swap call data
+        bytes memory swapData = abi.encodeWithSelector(
+            IUniswapV3PoolActions.swap.selector,
+            address(hopscotch),
+            true,
+            requestAmount,
+            0,
+            ""
+        );
+
+        // Approve input amount
+        IERC20(USDC).approve(address(hopscotch), inputAmount);
+
+        // Call pay with swap
+        hopscotch.payRequest(
+            id,
+            IERC20(USDC),
+            inputAmount,
+            UNISWAP_USDC_DAI_POOL,
+            swapData
+        );
+
+        (, , , bool paid) = hopscotch.getRequest(id);
+        assertTrue(paid);
     }
 }

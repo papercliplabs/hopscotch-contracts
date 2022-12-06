@@ -2,15 +2,15 @@
 pragma solidity ^0.8.13;
 
 import "forge-std/Script.sol";
-import "../src/Counter.sol";
+import "../src/Hopscotch.sol";
 
-contract CounterScript is Script {
+contract HopscotchScript is Script {
     function setUp() public {}
 
     function run() public {
         vm.broadcast();
 
-        Counter counter = new Counter();
+        Hopscotch hopscotch = new Hopscotch();
 
         vm.stopBroadcast();
     }
