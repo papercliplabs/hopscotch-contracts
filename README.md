@@ -1,0 +1,1 @@
+# hopscotch-contracts
