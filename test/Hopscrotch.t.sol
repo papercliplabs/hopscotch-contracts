@@ -88,7 +88,7 @@ contract HopscotchTest is Test {
         // assertTrue(paid);
 
         // TODO: confirm acct1 and acct2 balances
-    }
+    // }
 
     // function testPayRequestDirectNoApproval() public {
     //     uint256 requestAmount = 1 * 10**DAI_DECIMALS;
