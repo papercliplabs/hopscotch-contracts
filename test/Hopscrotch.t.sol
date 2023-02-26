@@ -9,154 +9,375 @@ import {IWrappedNativeToken} from "../src/IWrappedNativeToken.sol";
 import {ISwapRouter} from "uniswap-v3-periphery/interfaces/ISwapRouter.sol";
 
 contract HopscotchTest is Test {
-    IERC20 public constant DAI =
-        IERC20(0x6B175474E89094C44Da98b954EedeAC495271d0F);
-    IERC20 public constant USDC =
-        IERC20(0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48);
-    address public constant UNISWAP_V3_ROUTER =
-        0xE592427A0AEce92De3Edee1F18E0157C05861564;
-    IWrappedNativeToken public constant WETH9 =
-        IWrappedNativeToken(0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2);
+    // RPC's
+    string MAINNET_RPC_URL = vm.envString("MAINNET_RPC_URL");
 
-    // For this example, we will set the pool fee to 0.3%.
-    uint24 public constant poolFee = 3000;
+    // Forks
+    uint256 mainnetFork;
 
-    uint8 public constant DAI_DECIMALS = 8;
-    uint8 public constant USDC_DECIMALS = 18;
+    // Fork block numbers
+    uint256 mainnetBlockNumber = 16457587;
 
-    uint256 public constant MINT_AMMOUNT = 10000e18;
+    // Tokens
+    address public constant DAI = 0x6B175474E89094C44Da98b954EedeAC495271d0F;
+    address public constant USDC = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48;
+    address public constant WETH = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
 
+    // Users
+    address alice;
+    address bob;
+    address matt;
+
+    // External contracts
+    address public constant UNISWAP_V3_ROUTER = 0xE592427A0AEce92De3Edee1F18E0157C05861564;
+
+    // Contracts under test
     IHopscotch public hopscotch;
-    address acct0;
-    address acct1;
-    address acct2;
 
+    // Constants
+    uint256 public constant ERC20_MINT_AMMOUNT = 1e25;
+
+    // Expected events
+    event RequestCreated(
+        uint256 indexed requestId,
+        address indexed recipient,
+        address indexed recipientToken,
+        uint256 recipientTokenAmount
+    );
+
+    // Helpers
+    function selectMainnetFork() public {
+        vm.selectFork(mainnetFork);
+        vm.rollFork(mainnetBlockNumber);
+    }
+
+    // Setup
     function setUp() public {
-        acct0 = vm.addr(1);
-        acct1 = vm.addr(2);
-        acct2 = vm.addr(3);
+        // Create forks
+        mainnetFork = vm.createFork(MAINNET_RPC_URL);
 
-        vm.prank(acct0);
-        hopscotch = new Hopscotch(WETH9);
+        selectMainnetFork();
 
-        deal(address(DAI), acct0, MINT_AMMOUNT);
-        deal(address(USDC), acct0, MINT_AMMOUNT);
+        // Assign users
+        alice = vm.addr(1);
+        bob = vm.addr(2);
+        matt = vm.addr(3);
 
-        deal(address(DAI), acct1, MINT_AMMOUNT);
-        deal(address(USDC), acct1, MINT_AMMOUNT);
+        // Deploy contracts (alice is owner)
+        vm.prank(alice);
+        hopscotch = new Hopscotch(WETH);
 
-        deal(address(DAI), acct2, MINT_AMMOUNT);
-        deal(address(USDC), acct2, MINT_AMMOUNT);
+        // Mint initial ERC20's, matt is broke
+        deal(DAI, alice, ERC20_MINT_AMMOUNT);
+        deal(DAI, bob, ERC20_MINT_AMMOUNT);
+
+        deal(USDC, alice, ERC20_MINT_AMMOUNT);
+        deal(USDC, bob, ERC20_MINT_AMMOUNT);
+
+        deal(WETH, alice, ERC20_MINT_AMMOUNT);
+        deal(WETH, bob, ERC20_MINT_AMMOUNT);
+
+        deal(alice, ERC20_MINT_AMMOUNT);
+        deal(bob, ERC20_MINT_AMMOUNT);
     }
 
-    function testErc20Balance() public {
-        assertEq(DAI.balanceOf(address(acct0)), MINT_AMMOUNT);
-        assertEq(DAI.balanceOf(address(acct1)), MINT_AMMOUNT);
-        assertEq(DAI.balanceOf(address(acct2)), MINT_AMMOUNT);
+    // Setup Tests
+    function testCanSelectFork() public {
+        selectMainnetFork();
+
+        assertEq(vm.activeFork(), mainnetFork);
+        assertEq(block.number, mainnetBlockNumber);
     }
 
-    function testCreateRequest() public {
-        uint256 requestAmount = 1 * 10**DAI_DECIMALS;
+    function testDealErc20() public {
+        assertEq(IERC20(DAI).balanceOf(address(alice)), ERC20_MINT_AMMOUNT);
+        assertEq(IERC20(DAI).balanceOf(address(bob)), ERC20_MINT_AMMOUNT);
+        assertEq(IERC20(DAI).balanceOf(address(matt)), 0);
 
-        vm.prank(acct1);
-        uint256 id = hopscotch.createRequest(address(DAI), requestAmount);
+        assertEq(IERC20(USDC).balanceOf(address(alice)), ERC20_MINT_AMMOUNT);
+        assertEq(IERC20(USDC).balanceOf(address(bob)), ERC20_MINT_AMMOUNT);
+        assertEq(IERC20(USDC).balanceOf(address(matt)), 0);
+    }
 
-        (
-            address recipient,
-            address recipientToken,
-            uint256 recipientTokenAmount,
-            bool paid
-        ) = hopscotch.getRequest(id);
+    // Contract tests
+    function testCreateRequest(address requestToken, uint256 requestAmount) public {
+        vm.assume(requestAmount > 0);
 
-        assertEq(recipient, acct1);
-        assertEq(recipientToken, address(DAI));
+        // Expect this event to emit
+        vm.expectEmit(true, true, true, true); // Check all indexed, and data
+        emit RequestCreated(0, alice, requestToken, requestAmount);
+
+        vm.prank(alice);
+        uint256 id = hopscotch.createRequest(requestToken, requestAmount);
+
+        // Read back the created event
+        (address recipient, address recipientToken, uint256 recipientTokenAmount, bool paid) = hopscotch.getRequest(id);
+        assertEq(recipient, alice);
+        assertEq(recipientToken, requestToken);
         assertEq(recipientTokenAmount, requestAmount);
         assertEq(paid, false);
+
+        // Verify id incremented by 1 on next creation
+        vm.expectEmit(true, true, true, true); // Check all indexed, and data
+        emit RequestCreated(1, matt, USDC, requestAmount);
+        vm.prank(matt);
+        uint256 nextId = hopscotch.createRequest(USDC, requestAmount);
+
+        assertEq(nextId, 1);
     }
 
-    // function testPayRequestDirect() public {
-    //     uint256 requestAmount = 1 * 10**DAI_DECIMALS;
+    function testCreateRequestZeroAmount() public {
+        vm.prank(bob);
 
-    //     vm.prank(acct1);
-    //     uint256 id = hopscotch.createRequest(address(DAI), requestAmount);
+        vm.expectRevert();
+        hopscotch.createRequest(DAI, 0);
+    }
 
-    //     vm.startPrank(acct2);
-    //     DAI.approve(address(hopscotch), requestAmount);
-        // hopscotch.payRequest(id);
+    function testPayNativeRequestDirectly() public {
+        address requestToken = address(0);
+        uint256 requestAmount = 10000000;
 
-        // (, , , bool paid) = hopscotch.getRequest(id);
-        // assertTrue(paid);
+        // Alice create the request
+        vm.prank(alice);
+        uint256 id = hopscotch.createRequest(requestToken, requestAmount);
 
-        // TODO: confirm acct1 and acct2 balances
-    // }
-
-    // function testPayRequestDirectNoApproval() public {
-    //     uint256 requestAmount = 1 * 10**DAI_DECIMALS;
-
-    //     vm.prank(acct1);
-    //     uint256 id = hopscotch.createRequest(DAI, requestAmount);
-
-    //     vm.startPrank(acct2);
-    //     vm.expectRevert();
-    //     hopscotch.payRequest(id);
-
-    //     (, , , bool paid) = hopscotch.getRequest(id);
-    //     assertFalse(paid);
-    // }
-
-    function testPayRequestSwap() public {
-        uint256 requestAmount = 1 * 10**DAI_DECIMALS;
-        uint256 inputAmount = 2 * 10**USDC_DECIMALS; // max
-
-        address recipient = acct1;
-        address sender = acct2;
+        // Bob is going to pay it
+        vm.startPrank(bob);
 
         // Capture unpaid request balances
-        uint256 recipientRequestTokenBalanceBefore = DAI.balanceOf(recipient);
+        uint256 aliceRequestTokenBalanceBefore = alice.balance;
 
-        // Create request
-        vm.prank(recipient);
-        uint256 id = hopscotch.createRequest(address(DAI), requestAmount);
+        // Bob pays the request, don't need swap
+        hopscotch.payRequest{value: requestAmount}(IHopscotch.PayRequestInputParams(id, address(requestToken), requestAmount, address(0), ""));
 
-        vm.startPrank(sender);
+        // Make sure the request has been paid
+        (,,,bool paid) = hopscotch.getRequest(id);
+        assertTrue(paid);
+
+        uint256 recipientRequestTokenIncreace = alice.balance - aliceRequestTokenBalanceBefore;
+
+        assertEq(recipientRequestTokenIncreace, requestAmount);
+    }
+
+    function testPayErc20RequestDirectly() public {
+        address requestToken = DAI;
+        uint256 requestAmount = 10000000;
+
+        // Alice create the request
+        vm.prank(alice);
+        uint256 id = hopscotch.createRequest(requestToken, requestAmount);
+
+        // Bob is going to pay it
+        vm.startPrank(bob);
+
+        // Capture unpaid request balances
+        uint256 aliceRequestTokenBalanceBefore = IERC20(requestToken).balanceOf(alice);
 
         // Approve input amount
-        USDC.approve(address(hopscotch), inputAmount);
+        IERC20(requestToken).approve(address(hopscotch), requestAmount);
 
-        // Get swap call data
+        // Bob pays the request, don't need swap
+        hopscotch.payRequest(IHopscotch.PayRequestInputParams(id, address(requestToken), requestAmount, address(0), ""));
+
+        // Make sure the request has been paid
+        (,,,bool paid) = hopscotch.getRequest(id);
+        assertTrue(paid);
+
+        uint256 recipientRequestTokenIncreace = IERC20(requestToken).balanceOf(alice) - aliceRequestTokenBalanceBefore;
+
+        assertEq(recipientRequestTokenIncreace, requestAmount);
+    }
+
+    function testPayNativeRequestWithWrappedNative() public {
+        address requestToken = address(0);
+        uint256 requestAmount = 10000000;
+
+        // Alice create the request
+        vm.prank(alice);
+        uint256 id = hopscotch.createRequest(requestToken, requestAmount);
+
+        // Bob is going to pay it
+        vm.startPrank(bob);
+
+        // Capture unpaid request balances
+        uint256 aliceRequestTokenBalanceBefore = alice.balance;
+
+        // Approve input amount
+        IERC20(WETH).approve(address(hopscotch), requestAmount);
+
+        // Bob pays the request, don't need swap
+        hopscotch.payRequest(IHopscotch.PayRequestInputParams(id, WETH, requestAmount, address(0), ""));
+
+        // Make sure the request has been paid
+        (,,,bool paid) = hopscotch.getRequest(id);
+        assertTrue(paid);
+
+        uint256 recipientRequestTokenIncreace = alice.balance - aliceRequestTokenBalanceBefore;
+
+        assertEq(recipientRequestTokenIncreace, requestAmount);
+    }
+
+    function testPayWrappedNativeRequestWithNative() public {
+        address requestToken = WETH;
+        uint256 requestAmount = 10000000;
+
+        // Alice create the request
+        vm.prank(alice);
+        uint256 id = hopscotch.createRequest(requestToken, requestAmount);
+
+        // Bob is going to pay it
+        vm.startPrank(bob);
+
+        // Capture unpaid request balances
+        uint256 aliceRequestTokenBalanceBefore = IERC20(requestToken).balanceOf(alice);
+
+        // Bob pays the request, don't need swap
+        hopscotch.payRequest{value: requestAmount}(IHopscotch.PayRequestInputParams(id, address(0), requestAmount, address(0), ""));
+
+        // Make sure the request has been paid
+        (,,,bool paid) = hopscotch.getRequest(id);
+        assertTrue(paid);
+
+        uint256 recipientRequestTokenIncreace = IERC20(requestToken).balanceOf(alice) - aliceRequestTokenBalanceBefore;
+
+        assertEq(recipientRequestTokenIncreace, requestAmount);
+    }
+
+    function testPayErc20RequestWithErc20UniswapSwap() public {
+        address requestToken = DAI;
+        uint256 requestAmount = 10000000;
+
+        address payToken = USDC;
+        uint256 payTokenAmount = 1000000000;
+
+        // Alice create the request
+        vm.prank(alice);
+        uint256 id = hopscotch.createRequest(requestToken, requestAmount);
+
+        // Bob is going to pay it
+        vm.startPrank(bob);
+
+        // Capture unpaid request balances
+        uint256 aliceRequestTokenBalanceBefore = IERC20(requestToken).balanceOf(alice);
+
+        // Approve input amount
+        IERC20(payToken).approve(address(hopscotch), payTokenAmount);
+
+        // Get uniswap call data
         bytes memory swapCallData = abi.encodeWithSelector(
             ISwapRouter.exactOutputSingle.selector,
             ISwapRouter.ExactOutputSingleParams({
-                tokenIn: address(USDC),
-                tokenOut: address(DAI),
+                tokenIn: address(payToken),
+                tokenOut: address(requestToken),
                 fee: 500,
                 recipient: address(hopscotch),
                 deadline: block.timestamp,
                 amountOut: requestAmount,
-                amountInMaximum: inputAmount,
+                amountInMaximum: payTokenAmount,
                 sqrtPriceLimitX96: 0
             })
         );
 
-        // Call pay with swap
-        hopscotch.payRequest(
-            id,
-            address(USDC),
-            inputAmount,
-            UNISWAP_V3_ROUTER,
-            swapCallData
-        );
+        // Bob pays the request with Uniswap 
+        hopscotch.payRequest(IHopscotch.PayRequestInputParams(id, address(payToken), payTokenAmount, UNISWAP_V3_ROUTER, swapCallData));
 
         // Make sure the request has been paid
-        (, , uint256 recipientTokenAmount, bool paid) = hopscotch.getRequest(
-            id
-        );
+        (,,,bool paid) = hopscotch.getRequest(id);
         assertTrue(paid);
 
-        uint256 recipientRequestTokenIncreace = IERC20(DAI).balanceOf(
-            recipient
-        ) - recipientRequestTokenBalanceBefore;
+        uint256 recipientRequestTokenIncreace = IERC20(requestToken).balanceOf(alice) - aliceRequestTokenBalanceBefore;
 
-        assertEq(recipientRequestTokenIncreace, recipientTokenAmount);
+        assertEq(recipientRequestTokenIncreace, requestAmount);
+    }
+
+    function testPayNativeRequestWithErc20UniswapSwap() public {
+        address requestToken = address(0);
+        uint256 requestAmount = 10000000;
+
+        address payToken = USDC;
+        uint256 payTokenAmount = 1000000000;
+
+        // Alice create the request
+        vm.prank(alice);
+        uint256 id = hopscotch.createRequest(requestToken, requestAmount);
+
+        // Bob is going to pay it
+        vm.startPrank(bob);
+
+        // Capture unpaid request balances
+        uint256 aliceRequestTokenBalanceBefore = alice.balance;
+
+        // Approve input amount
+        IERC20(payToken).approve(address(hopscotch), payTokenAmount);
+
+        // Get uniswap call data
+        bytes memory swapCallData = abi.encodeWithSelector(
+            ISwapRouter.exactOutputSingle.selector,
+            ISwapRouter.ExactOutputSingleParams({
+                tokenIn: address(payToken),
+                tokenOut: address(WETH), // WETH swap output
+                fee: 500,
+                recipient: address(hopscotch),
+                deadline: block.timestamp,
+                amountOut: requestAmount,
+                amountInMaximum: payTokenAmount,
+                sqrtPriceLimitX96: 0
+            })
+        );
+
+        // Bob pays the request with Uniswap 
+        hopscotch.payRequest(IHopscotch.PayRequestInputParams(id, address(payToken), payTokenAmount, UNISWAP_V3_ROUTER, swapCallData));
+
+        // Make sure the request has been paid
+        (,,,bool paid) = hopscotch.getRequest(id);
+        assertTrue(paid);
+
+        uint256 recipientRequestTokenIncreace = alice.balance - aliceRequestTokenBalanceBefore;
+
+        assertEq(recipientRequestTokenIncreace, requestAmount);
+    }
+
+    function testPayErc20RequestWithNativeUniswapSwap() public {
+        address requestToken = DAI;
+        uint256 requestAmount = 10000000;
+
+        address payToken = address(0);
+        uint256 payTokenAmount = 1000000000;
+
+        // Alice create the request
+        vm.prank(alice);
+        uint256 id = hopscotch.createRequest(requestToken, requestAmount);
+
+        // Bob is going to pay it
+        vm.startPrank(bob);
+
+        // Capture unpaid request balances
+        uint256 aliceRequestTokenBalanceBefore = IERC20(requestToken).balanceOf(alice);
+
+        // Get uniswap call data
+        bytes memory swapCallData = abi.encodeWithSelector(
+            ISwapRouter.exactOutputSingle.selector,
+            ISwapRouter.ExactOutputSingleParams({
+                tokenIn: address(WETH),
+                tokenOut: address(requestToken),
+                fee: 500,
+                recipient: address(hopscotch),
+                deadline: block.timestamp,
+                amountOut: requestAmount,
+                amountInMaximum: payTokenAmount,
+                sqrtPriceLimitX96: 0
+            })
+        );
+
+        // Bob pays the request with Uniswap 
+        hopscotch.payRequest{value: payTokenAmount}(IHopscotch.PayRequestInputParams(id, address(payToken), payTokenAmount, UNISWAP_V3_ROUTER, swapCallData));
+
+        // Make sure the request has been paid
+        (,,,bool paid) = hopscotch.getRequest(id);
+        assertTrue(paid);
+
+        uint256 recipientRequestTokenIncreace = IERC20(requestToken).balanceOf(alice) - aliceRequestTokenBalanceBefore;
+
+        assertEq(recipientRequestTokenIncreace, requestAmount);
     }
 }

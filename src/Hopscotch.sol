@@ -7,6 +7,10 @@ import {IHopscotch} from "./IHopscotch.sol";
 import {IWrappedNativeToken} from "./IWrappedNativeToken.sol";
 
 contract Hopscotch is IHopscotch, Ownable {
+    ////
+    // Public structs 
+    ////
+
     struct Request {
         address payable recipient;
         address recipientToken;
@@ -14,256 +18,193 @@ contract Hopscotch is IHopscotch, Ownable {
         bool paid;
     }
 
+    ////
+    // Storage 
+    ////
+
     Request[] requests;
-    IWrappedNativeToken public immutable wrappedNativeToken;
+    address public immutable wrappedNativeToken;
+
+    ////
+    // Constructor 
+    ////
 
     /// @param _wrappedNativeToken wrapped native token address for the chain
-    constructor(IWrappedNativeToken _wrappedNativeToken) {
+    constructor(address _wrappedNativeToken) {
         wrappedNativeToken = _wrappedNativeToken;
     }
 
-    function createRequest(address recipientToken, uint256 recipientTokenAmount)
-        external
-        returns (uint256 id)
+    ////
+    // Private functions 
+    ////
+
+    /// @notice Pay a native request directly with the native tokens held in this contract
+    /// @param requestId id of the request to be paid
+    /// @dev The call will revert if:
+    ///         * request for requestId does not exist 
+    ///         * request is not for the native tokens
+    ///         * contract does not hold enough native tokens to fulfil the request 
+    function payNativeRequestDirect(uint256 requestId) internal 
     {
-        require(recipientTokenAmount > 0, "request amount must be >0");
+        Request storage request = requests[requestId];
+
+        require(request.recipientToken == address(0), "payNativeRequest/requestNotNative");
+        require(address(this).balance >= request.recipientTokenAmount, "payNativeRequest/notEnoughNativeTokens");
+
+        (bool success, ) = request.recipient.call{
+            value: request.recipientTokenAmount
+        }("");
+        require(success, "payNativeRequest/nativeTokenSendFailure");
+    }
+
+    /// @notice Pay an erc20 request directly with the erc20 tokens held by this contract 
+    /// @param requestId id of the request to be paid
+    /// @dev The call will revert if:
+    ///         * request for requestId does not exist 
+    ///         * request is for the native tokens
+    ///         * contract does not hold enough requestTokens to pay the request 
+    function payErc20RequestDirect(uint256 requestId) internal
+    {
+        Request storage request = requests[requestId];
+
+        require(request.recipientToken != address(0), "payErc20RequestDirect/requestIsNative");
+        require(IERC20(request.recipientToken).balanceOf(address(this)) >= request.recipientTokenAmount, "payErc20RequestDirect/insufficientFunds");
+
+        require(
+            IERC20(request.recipientToken).transfer(request.recipient, request.recipientTokenAmount), "payErc20RequestDirect/transferFailed"
+        );
+    }
+
+    /// @notice Perform a swap from inputToken to outputToken using the swapContractAddress with swapContractCallData  
+    /// @param inputToken input token to swap
+    /// @param outputToken output token to swap to
+    /// @param inputTokenAmountAllowance allowance of inputTokens given to swapContractAddress to perform the swap
+    /// @param minimumOutputTokenAmountReceived minumum output token amount recieved from the swap
+    /// @param swapContractAddress address of the contract that will perform the swap
+    ///                            if no swap is needed due to input and recipient tokens being the same this will not be called 
+    /// @param swapContractCallData call data to pass into the swap contract that will perform the swap
+    /// @dev The call will revert if
+    ///         * inputToken is the same as outputToken
+    ///         * inputToken balance of this contract is not at least inputTokenAmountAllowance
+    ///         * outputToken balance of this contract is not increaced by at least minimumOutputTokenAmountReceived after the swap 
+    ///         * swapContract call reverts
+    /// @return inputTokenAmountPaid amount of input tokens paid for the swap
+    /// @return outputTokenAmountReceived amount of output tokens recieved from the swap
+    function performSwap(address inputToken, address outputToken, uint256 inputTokenAmountAllowance, uint256 minimumOutputTokenAmountReceived, address swapContractAddress, bytes calldata swapContractCallData) internal returns (uint256 inputTokenAmountPaid, uint256 outputTokenAmountReceived)
+    {
+        // Grab balances before swap to compare with after
+        uint256 inputTokenBalanceBeforeSwap = IERC20(inputToken).balanceOf(address(this));
+        uint256 outputTokenBalanceBeforeSwap = IERC20(outputToken).balanceOf(address(this));
+
+        // Allow swap contract to spend this amount of swap input tokens
+        IERC20(inputToken).approve(swapContractAddress, inputTokenAmountAllowance);
+
+        // Execute swap
+        (bool swapSuccess,) = swapContractAddress.call(swapContractCallData);
+        require(swapSuccess, "performSwap/swap");
+
+        // Check output balance increaced by at least request amount
+        inputTokenAmountPaid = inputTokenBalanceBeforeSwap - IERC20(inputToken).balanceOf(address(this));
+        outputTokenAmountReceived = IERC20(outputToken).balanceOf(address(this)) - outputTokenBalanceBeforeSwap;
+
+        require(
+            outputTokenAmountReceived >= minimumOutputTokenAmountReceived, "performSwap/notEnoughOutputTokensFromSwap"
+        );
+
+        // Revoke input token approval
+        IERC20(inputToken).approve(swapContractAddress, 0);
+    }
+
+    ////
+    // Public functions 
+    ////
+
+    function createRequest(address recipientToken, uint256 recipientTokenAmount) external returns (uint256 id) {
+        require(recipientTokenAmount > 0, "createRequest/recipientTokenAmountZero");
 
         id = requests.length;
-
-        requests.push(
-            Request(
-                payable(msg.sender),
-                recipientToken,
-                recipientTokenAmount,
-                false
-            )
-        );
-
-        emit RequestCreated(
-            id,
-            msg.sender,
-            recipientToken,
-            recipientTokenAmount
-        );
+        requests.push(Request(payable(msg.sender), recipientToken, recipientTokenAmount, false));
+        emit RequestCreated(id, msg.sender, recipientToken, recipientTokenAmount);
     }
 
     function payRequest(
-        uint256 requestId,
-        address inputToken,
-        uint256 inputTokenAmount,
-        address swapContractAddress,
-        bytes calldata swapContractCallData
-    ) external payable {
-        Request storage request = requests[requestId];
+        PayRequestInputParams calldata params
+    )
+        external
+        payable
+        returns (uint256 excessNativeTokenBalance, uint256 excessErc20InputTokenBalance, uint256 excessErc20OutputTokenBalance)
+    {
+        Request storage request = requests[params.requestId];
 
-        require(inputTokenAmount > 0, "zero input token amount");
+        require(params.inputTokenAmount > 0, "payRequest/inputTokenAmountZero");
         require(!request.paid, "already paid");
         request.paid = true;
 
-        bool inputIsNative = address(inputToken) == address(0);
-        bool outputIsNative = address(request.recipientToken) == address(0);
+        bool inputIsNative = (params.inputToken == address(0));
+        bool outputIsNative = (request.recipientToken == address(0));
 
         if (inputIsNative) {
-            require(msg.value >= inputTokenAmount, "insufficient msg.value");
-        }
+            require(address(this).balance >= params.inputTokenAmount, "payRequest/nativeTokenAmountLessThanInputTokenAmount");
 
-        uint256 senderTokenAmount;
-        if (inputIsNative && outputIsNative) {
-            // Native token transfer
-            (bool success, ) = request.recipient.call{
-                value: request.recipientTokenAmount
-            }("");
-            require(success, "native token send failure");
-
-            // Refund extra value
-            if (msg.value > request.recipientTokenAmount) {
-                (bool refundSuccess, ) = msg.sender.call{
-                    value: msg.value - request.recipientTokenAmount
-                }("");
-                require(refundSuccess, "failed to refund native token");
+            if(!outputIsNative) {
+                // Wrap native token
+                IWrappedNativeToken(wrappedNativeToken).deposit{value: params.inputTokenAmount}();
             }
-
-            senderTokenAmount = request.recipientTokenAmount;
         } else {
-            IERC20 swapInputToken;
-            if (inputIsNative) {
-                swapInputToken = wrappedNativeToken;
-            } else {
-                swapInputToken = IERC20(inputToken);
-            }
-
-            IERC20 swapOutputToken;
-            if (outputIsNative) {
-                swapOutputToken = wrappedNativeToken;
-            } else {
-                swapOutputToken = IERC20(request.recipientToken);
-            }
-
-            // Transfer swap input token into this contract
-            if (inputIsNative) {
-                // Wrap any of the native token sent in if the input token is the wrapped native token
-                wrappedNativeToken.deposit{value: msg.value}();
-            } else {
-                // Transfer input tokens from caller to this contrat, must be approved for this
-                require(
-                    swapInputToken.transferFrom(
-                        msg.sender,
-                        address(this),
-                        inputTokenAmount
-                    ),
-                    "payRequest/inputTokenTransfer"
-                );
-            }
-
-            // Perform swap if needed
-            uint256 swapInputTokenRefund = 0;
-            uint256 swapOutputTokenRefund = 0;
-            if (swapInputToken != swapOutputToken) {
-                // Grab balances before swap to compare with after
-                uint256 swapInputTokenBalanceBeforeSwap = swapInputToken
-                    .balanceOf(address(this));
-                uint256 swapOutputTokenBalanceBeforeSwap = swapOutputToken
-                    .balanceOf(address(this));
-
-                // Allow swap contract to spend this amount of swap input tokens
-                swapInputToken.approve(swapContractAddress, inputTokenAmount);
-
-                // Execute swap
-                (bool swapSuccess, ) = swapContractAddress.call(
-                    swapContractCallData
-                );
-                require(swapSuccess, "payRequest/swap");
-
-                // Check output balance increaced by at least request amount
-                uint256 swapInputTokenAmountPaid = swapInputTokenBalanceBeforeSwap -
-                        swapInputToken.balanceOf(address(this));
-                uint256 swapOutputTokenAmountReceived = swapOutputToken
-                    .balanceOf(address(this)) -
-                    swapOutputTokenBalanceBeforeSwap;
-                require(
-                    swapOutputTokenAmountReceived >=
-                        request.recipientTokenAmount,
-                    "payRequest/notEnoughOutputTokensFromSwap"
-                );
-
-                // Revoke input token approval
-                swapInputToken.approve(swapContractAddress, 0);
-
-                if (inputTokenAmount - swapInputTokenAmountPaid > 0) {
-                    swapInputTokenRefund =
-                        inputTokenAmount -
-                        swapInputTokenAmountPaid;
-                }
-
-                if (
-                    swapOutputTokenAmountReceived > request.recipientTokenAmount
-                ) {
-                    swapOutputTokenRefund =
-                        request.recipientTokenAmount -
-                        swapOutputTokenAmountReceived;
-                }
-            } else {
-                swapInputTokenRefund =
-                    inputTokenAmount -
-                    request.recipientTokenAmount;
-            }
-
-            // Pay the request
-            if (outputIsNative) {
-                // Unwrap and send
-                wrappedNativeToken.withdraw(request.recipientTokenAmount);
-                (bool success, ) = request.recipient.call{
-                    value: request.recipientTokenAmount
-                }("");
-                require(success, "send of native tokens failed");
-            } else {
-                // Transfer
-                require(
-                    swapOutputToken.transfer(
-                        request.recipient,
-                        request.recipientTokenAmount
-                    ),
-                    "failed to pay request with erc20 token"
-                );
-            }
-
-            // Refund remaining input tokens
-            if (swapInputTokenRefund > 0) {
-                if (inputIsNative) {
-                    // unwrap and refund native
-                    wrappedNativeToken.withdraw(swapInputTokenRefund);
-                    (bool success, ) = request.recipient.call{
-                        value: swapInputTokenRefund
-                    }("");
-                    require(success, "refund of native input tokens failed");
-                } else {
-                    require(
-                        swapInputToken.transfer(
-                            msg.sender,
-                            swapInputTokenRefund
-                        ),
-                        "failed to refund excess input tokens"
-                    );
-                }
-            }
-
-            // Refund remaining output tokens
-            if (swapOutputTokenRefund > 0) {
-                if (outputIsNative) {
-                    // unwrap and refund native
-                    wrappedNativeToken.withdraw(swapOutputTokenRefund);
-                    (bool success, ) = request.recipient.call{
-                        value: swapOutputTokenRefund
-                    }("");
-                    require(success, "refund of native output tokens failed");
-                } else {
-                    require(
-                        swapOutputToken.transfer(
-                            msg.sender,
-                            swapOutputTokenRefund
-                        ),
-                        "failed to refund excess output tokens"
-                    );
-                }
-            }
-
-            senderTokenAmount = inputTokenAmount - swapInputTokenRefund;
+            // Transfer tokens in
+            require(
+                IERC20(params.inputToken).transferFrom(msg.sender, address(this), params.inputTokenAmount),
+                "payRequest/inputTokenTransferFailed"
+            );
         }
 
-        emit RequestPaid(requestId, msg.sender, inputToken, senderTokenAmount);
+        address erc20InputToken = inputIsNative ? wrappedNativeToken : params.inputToken;
+        address erc20OutputToken = outputIsNative ? wrappedNativeToken : request.recipientToken;
+
+        // Stright transfer if not overridden by swap below
+        uint256 inputTokenAmountPaid = request.recipientTokenAmount; 
+        if(erc20InputToken != erc20OutputToken)
+        {
+            (inputTokenAmountPaid,) = performSwap(erc20InputToken, erc20OutputToken, params.inputTokenAmount, request.recipientTokenAmount, params.swapContractAddress, params.swapContractCallData);
+        }
+
+        if(outputIsNative) {
+            if(!inputIsNative) {
+                // Unwrap
+                IWrappedNativeToken(wrappedNativeToken).withdraw(IWrappedNativeToken(wrappedNativeToken).balanceOf(address(this)));
+            }
+
+            // Direct send
+            payNativeRequestDirect(params.requestId);
+        } else {
+            // Direct transfer
+            payErc20RequestDirect(params.requestId);
+        }
+
+        uint256 nativeTokenBalance = address(this).balance;
+        uint256 erc20InputTokenBalance = IERC20(erc20InputToken).balanceOf(address(this));
+        uint256 erc20OutputTokenBalance = IERC20(erc20OutputToken).balanceOf(address(this));
+
+        emit RequestPaid(params.requestId, msg.sender, params.inputToken, inputTokenAmountPaid);
+        return (nativeTokenBalance, erc20InputTokenBalance, erc20OutputTokenBalance);
     }
 
     function withdraw() public onlyOwner {
-        (bool success, ) = payable(msg.sender).call{
-            value: address(this).balance
-        }("");
+        (bool success,) = payable(msg.sender).call{value: address(this).balance}("");
         require(success, "withdraw failed");
     }
 
     function withdrawToken(IERC20 token) public onlyOwner {
-        require(
-            token.transfer(msg.sender, token.balanceOf(address(this))),
-            "transfer failed"
-        );
+        require(token.transfer(msg.sender, token.balanceOf(address(this))), "transfer failed");
     }
 
     function getRequest(uint256 requestId)
         external
         view
-        returns (
-            address recipient,
-            address recipientToken,
-            uint256 recipientTokenAmount,
-            bool paid
-        )
+        returns (address recipient, address recipientToken, uint256 recipientTokenAmount, bool paid)
     {
         Request storage request = requests[requestId];
-        return (
-            request.recipient,
-            request.recipientToken,
-            request.recipientTokenAmount,
-            request.paid
-        );
+        return (request.recipient, request.recipientToken, request.recipientTokenAmount, request.paid);
     }
 
     fallback() external payable {}
