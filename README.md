@@ -17,11 +17,13 @@ forge test
 ```
 
 To generate gas reports
+
 ```
 forge test --gas-report
 ```
 
 ### Old
+
 1. Run a local ethereum node by forking mainnet using [anvil](https://github.com/foundry-rs/foundry/tree/master/anvil)
     ```
     anvil --fork-url https://eth-mainnet.g.alchemy.com/v2/<alchemy_api_key>
@@ -51,6 +53,14 @@ forge test --gas-report
 
 4. Deploy the contract
 
+    - Goerli:
+
     ```
     forge script script/Hopscotch.s.sol --rpc-url $GOERLI_RPC_URL --broadcast --verify -vvvv
+    ```
+
+    - Polygon
+
+    ```
+    forge script script/Hopscotch.s.sol --rpc-url $POLYGON_RPC_URL --broadcast --verify -vvvv
     ```

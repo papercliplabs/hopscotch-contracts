@@ -6,6 +6,24 @@ import {IWrappedNativeToken} from "./IWrappedNativeToken.sol";
 
 interface IHopscotch {
     ////
+    // Types
+    ////
+
+    /// @param requestId id of the request to be paid
+    /// @param inputToken input token the request is being paid with, use zero address for native token
+    /// @param inputTokenAmount amount of input token to pay the request, this should be the quoted amount for the swap data
+    /// @param swapContractAddress address of the contract that will perform the swap
+    ///                            if no swap is needed due to input and recipient tokens being the same this will not be called
+    /// @param swapContractCallData call data to pass into the swap contract that will perform the swap
+    struct PayRequestInputParams {
+        uint256 requestId;
+        address inputToken;
+        uint256 inputTokenAmount;
+        address swapContractAddress;
+        bytes swapContractCallData;
+    }
+
+    ////
     // Events
     ////
 
@@ -30,36 +48,12 @@ interface IHopscotch {
         uint256 indexed requestId, address indexed sender, address senderToken, uint256 senderTokenAmount
     );
 
-    /// @notice Emitted when tokens are withdraw from this contract
-    /// @param token token being withdrawn, zero address for native asset
-    /// @param to where is the withdraw is going to
-    /// @param amount amount being withdrawn
-    event Withdraw(IERC20 indexed token, address indexed to, uint256 amount);
-
     ////
-    // Public structs 
-    ////
-
-    /// @param requestId id of the request to be paid
-    /// @param inputToken input token the request is being paid with, use zero address for native token 
-    /// @param inputTokenAmount amount of input token to pay the request, this should be the quoted amount for the swap data
-    /// @param swapContractAddress address of the contract that will perform the swap
-    ///                            if no swap is needed due to input and recipient tokens being the same this will not be called 
-    /// @param swapContractCallData call data to pass into the swap contract that will perform the swap
-    struct PayRequestInputParams {
-        uint256 requestId;
-        address inputToken;
-        uint256 inputTokenAmount;
-        address swapContractAddress;
-        bytes swapContractCallData;
-    }
-
-    ////
-    // Public function declarations 
+    // Public function declarations
     ////
 
     /// @notice Create a request for a given token and token amount to be paid to msg.sender
-    /// @param recipientToken token being requested, use zero address for native token 
+    /// @param recipientToken token being requested, use zero address for native token
     /// @param recipientTokenAmount the amount of the request token being requested
     /// @dev The call will revert if:
     ///         * recipient token amount is 0
@@ -68,39 +62,28 @@ interface IHopscotch {
     function createRequest(address recipientToken, uint256 recipientTokenAmount) external returns (uint256 id);
 
     /// @notice Pay the request at requestId using the swapContractAddress
-    /// @param params params 
+    /// @param params params
     /// @dev The call will revert if:
-    ///         * request for requestId does not exist 
+    ///         * request for requestId does not exist
     ///         * request has already been paid
     ///         * inputToken is the zero address
     ///         * inputTokenAmount is 0
-    ///         * input token approval for this contract from msg.sender is less than inputTokenAmount 
+    ///         * input token approval for this contract from msg.sender is less than inputTokenAmount
     ///         * swapContractAddress called with swapContractCallData did not output at least the requests recipientTokenAmount of recipientToken
     ///      Excess input or output tokens will be returned to msg.sender
     ///      This will automatically wrap ETH asset if the inputTokenAddress is WETH9 and at least the inputTokenAmount of ETH was sent in
     ///      emits RequestPaid
-    /// @return excessNativeTokenBalance amount of left over native tokens after the request was paid 
-    /// @return excessErc20InputTokenBalance amount of left input erc20 tokens after the request was paid (wrapped native if the input was native token) 
-    /// @return excessErc20OutputTokenBalance amout of left over output erc20 tokens after the request was paid (wrapped native if the output was native token) 
-    function payRequest(
-        PayRequestInputParams calldata params
-    )
+    /// @return refundedNativeTokenAmount amount of native token refunded to msg.sender
+    /// @return refundedErc20InputTokenAmount amount of input token refunded to msg.sender
+    /// @return refundedErc20OutputTokenAmount amount of output token refunded to msg.sender
+    function payRequest(PayRequestInputParams calldata params)
         external
         payable
-        returns (uint256 excessNativeTokenBalance, uint256 excessErc20InputTokenBalance, uint256 excessErc20OutputTokenBalance);
-
-    /// @notice Withdraw contract balance to the owner
-    /// @dev The call will revert if:
-    ///         * not called from the contract owner
-    ///      emits Withdraw
-    function withdraw() external;
-
-    /// @notice Withdraw erc20 token balance to the owner
-    /// @param token token to withdraw
-    /// @dev The call will revert if:
-    ///         * not called from the contract owner
-    ///      emits Withdraw
-    function withdrawToken(IERC20 token) external;
+        returns (
+            uint256 refundedNativeTokenAmount,
+            uint256 refundedErc20InputTokenAmount,
+            uint256 refundedErc20OutputTokenAmount
+        );
 
     /// @notice Get the request for the id
     /// @param requestId request id
@@ -108,8 +91,4 @@ interface IHopscotch {
         external
         view
         returns (address recipient, address recipientToken, uint256 recipientTokenAmount, bool paid);
-
-    fallback() external payable;
-
-    receive() external payable;
 }

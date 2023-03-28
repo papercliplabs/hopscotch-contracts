@@ -22,45 +22,14 @@
       "additionalContracts": []
     }
   ],
-  "receipts": [
-    {
-      "transactionHash": "0xa889d6af33d9232d1d85d4179e1e9a008b9a9cec58124dd6f879394c644d7489",
-      "transactionIndex": "0x8",
-      "blockHash": "0x82b9b6ee2279ed4530f47db6928642bc2a1c6b971d43a4c7fdc7094faebc943c",
-      "blockNumber": "0x836399",
-      "from": "0x0feE1E7d4429666eb2b6F2239563ccDd86B70038",
-      "to": null,
-      "cumulativeGasUsed": "0x245f39",
-      "gasUsed": "0x160d92",
-      "contractAddress": "0xDD67309A86Dc5a37D001682345a84fceFfcFdeeB",
-      "logs": [
-        {
-          "address": "0xDD67309A86Dc5a37D001682345a84fceFfcFdeeB",
-          "topics": [
-            "0x8be0079c531659141344cd1fd0a4f28419497f9722a3daafe3b4186f6b6457e0",
-            "0x0000000000000000000000000000000000000000000000000000000000000000",
-            "0x0000000000000000000000000fee1e7d4429666eb2b6f2239563ccdd86b70038"
-          ],
-          "data": "0x",
-          "blockHash": "0x82b9b6ee2279ed4530f47db6928642bc2a1c6b971d43a4c7fdc7094faebc943c",
-          "blockNumber": "0x836399",
-          "transactionHash": "0xa889d6af33d9232d1d85d4179e1e9a008b9a9cec58124dd6f879394c644d7489",
-          "transactionIndex": "0x8",
-          "logIndex": "0x15",
-          "removed": false
-        }
-      ],
-      "status": "0x1",
-      "logsBloom": "0x00000000000000000000400000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000000000000000000100000000000000020000000000000000000800001000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000800000000000000000000008000000000000",
-      "type": "0x2",
-      "effectiveGasPrice": "0x415f923ec"
-    }
-  ],
+  "receipts": [],
   "libraries": [],
-  "pending": [],
+  "pending": [
+    "0xa889d6af33d9232d1d85d4179e1e9a008b9a9cec58124dd6f879394c644d7489"
+  ],
   "path": "/Users/spencerperkins/Developer/Paperclip/hopscotch-contracts/broadcast/Hopscotch.s.sol/5/run-latest.json",
   "returns": {},
-  "timestamp": 1678159209,
+  "timestamp": 1678159159,
   "chain": 5,
   "multi": false,
   "commit": "78172d7"

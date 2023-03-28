@@ -8,5 +8,5 @@ interface IWrappedNativeToken is IERC20 {
     function deposit() external payable;
 
     /// @notice Withdraw wrapped native asset to get native asset
-    function withdraw(uint256) external;
+    function withdraw(uint256 amount) external;
 }
