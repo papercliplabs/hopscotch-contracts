@@ -66,9 +66,9 @@ interface IHopscotch {
     /// @dev The call will revert if:
     ///         * request for requestId does not exist
     ///         * request has already been paid
-    ///         * inputToken is the zero address
     ///         * inputTokenAmount is 0
     ///         * input token approval for this contract from msg.sender is less than inputTokenAmount
+    ///         * insufficient input token balance
     ///         * swapContractAddress called with swapContractCallData did not output at least the requests recipientTokenAmount of recipientToken
     ///      Excess input or output tokens will be returned to msg.sender
     ///      This will automatically wrap ETH asset if the inputTokenAddress is WETH9 and at least the inputTokenAmount of ETH was sent in

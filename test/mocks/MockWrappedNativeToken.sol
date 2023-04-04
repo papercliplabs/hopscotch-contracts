@@ -8,7 +8,7 @@ contract MockWrappedNativeToken is ERC20, IWrappedNativeToken {
     constructor(string memory name, string memory symbol) ERC20(name, symbol) {}
 
     function mint(address _to, uint256 _amount) public {
-        _mint(_to, _amount);
+        // Nothing, don't allow mint
     }
 
     function deposit() external payable {
@@ -17,6 +17,7 @@ contract MockWrappedNativeToken is ERC20, IWrappedNativeToken {
 
     function withdraw(uint256 amount) external {
         _burn(msg.sender, amount);
-        payable(msg.sender).call{value: amount}("");
+        (bool s,) = payable(msg.sender).call{value: amount}("");
+        require(s, "withdraw/failed");
     }
 }

@@ -56,11 +56,15 @@ forge test --gas-report
     - Goerli:
 
     ```
-    forge script script/Hopscotch.s.sol --rpc-url $GOERLI_RPC_URL --broadcast --verify -vvvv
+    forge script script/Hopscotch.GoerliDeploy.s.sol --rpc-url $GOERLI_RPC_URL --broadcast --verify -vvvv
     ```
 
     - Polygon
 
     ```
-    forge script script/Hopscotch.s.sol --rpc-url $POLYGON_RPC_URL --broadcast --verify -vvvv
+    forge script script/Hopscotch.PolygonDeploy.s.sol --rpc-url $POLYGON_RPC_URL --broadcast --verify -vvvv
     ```
+
+```
+forge create Hopscotch --contracts src/Hopscotch.sol --private-key <private_key> --rpc-url <rpc_url> --constructor-args <weth_addr> --etherscan-api-key <etherscan_api_key> --verify
+```
