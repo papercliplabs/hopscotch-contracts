@@ -59,6 +59,12 @@ forge test --gas-report
     forge script script/Hopscotch.GoerliDeploy.s.sol --rpc-url $GOERLI_RPC_URL --broadcast --verify -vvvv
     ```
 
+    - Sepolia
+
+    ```
+    forge script script/Hopscotch.SepoliaDeploy.s.sol --rpc-url $SEPOLIA_RPC_URL --broadcast --verify -vvvv
+    ```
+
     - Polygon
 
     ```
