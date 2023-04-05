@@ -71,6 +71,26 @@ forge test --gas-report
     forge script script/Hopscotch.PolygonDeploy.s.sol --rpc-url $POLYGON_RPC_URL --broadcast --verify -vvvv
     ```
 
+    - Optimism
+
+    ```
+    forge script script/Hopscotch.OptimismDeploy.s.sol --rpc-url $SEPOLIA_RPC_URL --broadcast --verify -vvvv
+    ```
+
 ```
 forge create Hopscotch --contracts src/Hopscotch.sol --private-key <private_key> --rpc-url <rpc_url> --constructor-args <weth_addr> --etherscan-api-key <etherscan_api_key> --verify
+```
+
+Verify after
+
+```
+forge verify-contract \
+    --chain-id 137 \
+    --num-of-optimizations 200 \
+    --watch \
+    --constructor-args $(cast abi-encode "constructor(address)" 0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270) \
+    --etherscan-api-key ${POLYGONSCAN_API_KEY} \
+    --compiler-version v0.8.17+commit.8df45f5f \
+    0x92Ef06DBcCf841194437AfAc61BbcD5E3530fAdB \
+    src/Hopscotch.sol:Hopscotch
 ```
